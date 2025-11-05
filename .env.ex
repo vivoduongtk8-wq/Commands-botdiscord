@@ -1,0 +1,3 @@
+TOKEN=token_bot_của_bạn
+CLIENT_ID=id_bot_của_bạn
+GUILD_ID=id_server_test_của_bạn
