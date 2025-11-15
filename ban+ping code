@@ -1,0 +1,125 @@
+import {
+  Client,
+  GatewayIntentBits,
+  SlashCommandBuilder,
+  Routes,
+  REST,
+  EmbedBuilder,
+  PermissionFlagsBits,
+} from "discord.js";
+import dotenv from "dotenv";
+dotenv.config();
+
+const client = new Client({
+  intents: [GatewayIntentBits.Guilds],
+});
+
+const TOKEN = process.env.TOKEN;
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID;
+
+// ===== Đăng ký slash command (theo guild) =====
+const commands = [
+  // Lệnh ping
+  new SlashCommandBuilder()
+    .setName("ping")
+    .setDescription("Kiểm tra độ trễ (ping) của bot"),
+
+  // Lệnh ban
+  new SlashCommandBuilder()
+    .setName("ban")
+    .setDescription("Ban một thành viên khỏi server")
+    .addUserOption((option) =>
+      option.setName("user").setDescription("Người cần ban").setRequired(true)
+    )
+    .addStringOption((option) =>
+      option.setName("reason").setDescription("Lý do ban").setRequired(false)
+    )
+    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers), // yêu cầu quyền Ban Members
+].map((cmd) => cmd.toJSON());
+
+const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+(async () => {
+  try {
+    console.log("🔁 Đang đăng ký lệnh trong guild...");
+    await rest.put(Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID), {
+      body: commands,
+    });
+    console.log("✅ Đăng ký slash command thành công!");
+  } catch (error) {
+    console.error(error);
+  }
+})();
+
+// ===== Khi bot online =====
+client.once("ready", () => {
+  console.log(`✅ Bot đã đăng nhập với tên ${client.user.tag}!`);
+});
+
+// ===== Xử lý lệnh =====
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  // ----------------- /ping -----------------
+  if (interaction.commandName === "ping") {
+    const start = Date.now();
+    await interaction.reply({ content: "🏓 Đang kiểm tra ping...", fetchReply: true });
+    const end = Date.now();
+
+    const apiPing = interaction.client.ws.ping;
+    const botPing = end - start;
+
+    const embed = new EmbedBuilder()
+      .setColor("Random")
+      .setTitle("🏓 Pong!")
+      .setDescription(`**Độ trễ bot:** \`${botPing}ms\`\n**Độ trễ API:** \`${apiPing}ms\``)
+      .setFooter({
+        text: `Yêu cầu bởi ${interaction.user.tag}`,
+        iconURL: interaction.user.displayAvatarURL(),
+      })
+      .setTimestamp();
+
+    return interaction.editReply({ content: "", embeds: [embed] });
+  }
+
+  // ----------------- /ban -----------------
+  if (interaction.commandName === "ban") {
+    const user = interaction.options.getUser("user");
+    const reason = interaction.options.getString("reason") || "Không có lý do";
+    const member = await interaction.guild.members.fetch(user.id).catch(() => null);
+
+    // Kiểm tra nếu không tìm thấy member
+    if (!member) {
+      return interaction.reply({
+        content: "❌ Không tìm thấy người dùng trong server!",
+        ephemeral: true,
+      });
+    }
+
+    // Kiểm tra bot có thể ban được không
+    if (!member.bannable) {
+      return interaction.reply({
+        content: "❌ Bot không thể ban người này (role của họ cao hơn bot).",
+        ephemeral: true,
+      });
+    }
+
+    // Tiến hành ban
+    await member.ban({ reason });
+
+    const embed = new EmbedBuilder()
+      .setColor("Red")
+      .setTitle("🔨 Đã ban thành công!")
+      .addFields(
+        { name: "👤 Thành viên", value: `${user.tag}` },
+        { name: "✏️ Lý do", value: reason },
+        { name: "👮 Bởi", value: interaction.user.tag }
+      )
+      .setTimestamp();
+
+    return interaction.reply({ embeds: [embed] });
+  }
+});
+
+client.login(TOKEN);
